@@ -2,7 +2,7 @@
 __pycache__/
 *.py[codz]
 *$py.class
-
+/ccb_word_docs
 # C extensions
 *.so
 

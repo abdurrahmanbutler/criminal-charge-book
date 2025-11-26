@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Charge Book Chunk Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Light mode UI -->
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f5f7;
+      --bg-elevated: #ffffff;
+      --border: #e0e0e6;
+      --accent: #2563eb;
+      --accent-soft: #e0edff;
+      --text: #111827;
+      --text-muted: #6b7280;
+      --shadow-soft: 0 10px 25px rgba(15, 23, 42, 0.06);
+      --radius-lg: 16px;
+      --radius-md: 10px;
+      --radius-pill: 999px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(10px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    header .title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    header .title span.sub {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+
+    header .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .file-input-label {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text);
+      box-shadow: var(--shadow-soft);
+      transition: background 0.1s ease, transform 0.06s ease,
+        box-shadow 0.1s ease;
+    }
+
+    .file-input-label:hover {
+      background: #f9fafb;
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.1);
+    }
+
+    .file-input-label:active {
+      transform: translateY(0);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .file-input-label span.icon {
+      font-size: 16px;
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .input-text {
+      padding: 7px 12px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      min-width: 220px;
+      max-width: 320px;
+      background: var(--bg-elevated);
+    }
+
+    .input-text:focus {
+      outline: 2px solid var(--accent-soft);
+      border-color: var(--accent);
+    }
+
+    main {
+      flex: 1;
+      padding: 14px 16px 16px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) minmax(0, 1.6fr) minmax(0, 1.6fr);
+      gap: 14px;
+      height: calc(100vh - 90px);
+      max-height: calc(100vh - 90px);
+    }
+
+    @media (max-width: 1100px) {
+      .layout {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: 280px minmax(0, 1.3fr) minmax(0, 1.3fr);
+        height: auto;
+        max-height: none;
+      }
+    }
+
+    .card {
+      background: var(--bg-elevated);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-soft);
+      padding: 10px 10px 12px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 0 4px 8px;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 500;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .sidebar {
+      overflow: hidden;
+    }
+
+    .chunk-list {
+      margin-top: 8px;
+      padding-top: 2px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .chunk-item {
+      all: unset;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 7px 9px;
+      margin-bottom: 5px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.08s ease, border-color 0.08s ease,
+        transform 0.05s ease;
+    }
+
+    .chunk-item:hover {
+      background: #f3f4ff;
+      border-color: #d0ddff;
+      transform: translateY(-0.5px);
+    }
+
+    .chunk-item.active {
+      background: #e0edff;
+      border-color: var(--accent);
+    }
+
+    .chunk-item-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .chunk-item-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .chunk-item-meta span {
+      white-space: nowrap;
+    }
+
+    .sidebar-filters {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 4px 4px 0;
+    }
+
+    .sidebar-filters label {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .sidebar-filters input,
+    .sidebar-filters select {
+      font-size: 12px;
+      padding: 5px 9px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+      background: #f9fafb;
+    }
+
+    .sidebar-filters input:focus,
+    .sidebar-filters select:focus {
+      outline: 1px solid var(--accent-soft);
+      border-color: var(--accent);
+      background: #ffffff;
+    }
+
+    .chunk-count {
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 4px;
+    }
+
+    .content {
+      overflow: hidden;
+    }
+
+    .content-inner {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 6px 10px;
+      padding: 6px 4px 6px;
+      font-size: 12px;
+    }
+
+    .meta-label {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .meta-value {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .markdown-scroll {
+      flex: 1;
+      margin-top: 2px;
+      padding: 4px 6px 6px;
+      overflow-y: auto;
+      border-radius: var(--radius-md);
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+    }
+
+    .markdown-body {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+
+    .markdown-body h1,
+    .markdown-body h2,
+    .markdown-body h3,
+    .markdown-body h4,
+    .markdown-body h5,
+    .markdown-body h6 {
+      margin-top: 0.8em;
+      margin-bottom: 0.3em;
+      line-height: 1.2;
+    }
+
+    .markdown-body p {
+      margin: 0 0 0.5em;
+    }
+
+    .markdown-body ul,
+    .markdown-body ol {
+      padding-left: 1.3em;
+      margin: 0 0 0.5em;
+    }
+
+    .markdown-body li + li {
+      margin-top: 0.15em;
+    }
+
+    .markdown-body a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(37, 99, 235, 0.3);
+    }
+
+    .markdown-body a:hover {
+      border-bottom-color: rgba(37, 99, 235, 0.7);
+    }
+
+    .markdown-body code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+      font-size: 0.85em;
+      background: #eef2ff;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
+    .markdown-body pre {
+      background: #111827;
+      color: #e5e7eb;
+      padding: 8px 10px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 12px;
+    }
+
+    .markdown-body blockquote {
+      margin: 0 0 0.5em;
+      padding-left: 0.7em;
+      border-left: 3px solid #e5e7eb;
+      color: #4b5563;
+      font-style: italic;
+    }
+
+    .footnotes-wrapper {
+      border-top: 1px dashed #d4d4d8;
+      margin-top: 6px;
+      padding-top: 6px;
+    }
+
+    .footnotes-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .placeholder {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .preview {
+      overflow: hidden;
+    }
+
+    .preview-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      margin-top: 6px;
+    }
+
+    .preview-url {
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 4px 4px 2px;
+      word-break: break-all;
+    }
+
+    .preview-url span.label {
+      font-weight: 500;
+      color: #4b5563;
+      margin-right: 4px;
+    }
+
+    .preview-frame-wrapper {
+      flex: 1;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .preview-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #f9fafb;
+    }
+
+    .docx-preview {
+      padding: 8px 10px;
+      overflow-y: auto;
+      height: 100%;
+      background: #ffffff;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 2px 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="title">
+        Charge Book Chunk Viewer
+        <span class="sub">Compare JSONL markdown vs original documents</span>
+      </div>
+      <div class="controls">
+        <label class="file-input-label">
+          <span class="icon">📄</span>
+          <span>Load chunks JSONL</span>
+          <input
+            type="file"
+            id="jsonlInput"
+            class="file-input"
+            accept=".jsonl,.txt,application/jsonl,text/plain"
+          />
+        </label>
+
+        <label class="file-input-label">
+          <span class="icon">📂</span>
+          <span>Load docs folder (optional)</span>
+          <input
+            type="file"
+            id="docsInput"
+            class="file-input"
+            webkitdirectory
+            directory
+            multiple
+          />
+        </label>
+
+        <input
+          type="text"
+          id="baseUrlInput"
+          class="input-text"
+          placeholder="Base URL (optional), e.g. /ccb_word_docs or http://localhost:8000/ccb_word_docs"
+        />
+      </div>
+    </header>
+
+    <main>
+      <div class="layout">
+        <!-- Sidebar: chunk list -->
+        <section class="card sidebar">
+          <div class="card-header">
+            <div class="card-title">Chunks</div>
+            <div class="badge">
+              <span class="badge-dot"></span>
+              <span id="chunkCount">0 chunks</span>
+            </div>
+          </div>
+          <div class="sidebar-filters">
+            <label>
+              Search
+              <input
+                type="text"
+                id="searchInput"
+                placeholder="ID, section, title, text..."
+              />
+            </label>
+            <label>
+              Filter by document
+              <select id="docFilter">
+                <option value="">All documents</option>
+              </select>
+            </label>
+          </div>
+          <div id="chunkList" class="chunk-list"></div>
+        </section>
+
+        <!-- Middle: markdown + meta -->
+        <section class="card content">
+          <div class="card-header">
+            <div class="card-title">Markdown &amp; Metadata</div>
+            <div class="badge">
+              <span class="badge-dot"></span>
+              <span id="currentChunkLabel">No chunk selected</span>
+            </div>
+          </div>
+          <div class="content-inner">
+            <div class="meta-grid">
+              <div>
+                <div class="meta-label">Chunk ID</div>
+                <div id="metaId" class="meta-value">–</div>
+              </div>
+              <div>
+                <div class="meta-label">Section title</div>
+                <div id="metaSection" class="meta-value">–</div>
+              </div>
+              <div>
+                <div class="meta-label">Chunk title</div>
+                <div id="metaChunkTitle" class="meta-value">–</div>
+              </div>
+              <div>
+                <div class="meta-label">Document</div>
+                <div id="metaDocName" class="meta-value">–</div>
+              </div>
+            </div>
+            <div class="markdown-scroll">
+              <div id="chunkText" class="markdown-body">
+                <p class="placeholder">
+                  Load a JSONL file and select a chunk to see its markdown here.
+                </p>
+              </div>
+              <div id="footnotesWrapper" class="footnotes-wrapper" style="display: none;">
+                <div class="footnotes-title">Footnotes / citations</div>
+                <div id="chunkFootnotes" class="markdown-body"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right: file preview -->
+        <section class="card preview">
+          <div class="card-header">
+            <div class="card-title">Document preview</div>
+          </div>
+          <div class="preview-body">
+            <div class="preview-url">
+              <span class="label">Source:</span>
+              <span id="previewInfo" class="placeholder">
+                Load the docs folder or set a base URL, then select a chunk.
+              </span>
+            </div>
+            <div class="hint">
+              DOC/DOCX files are rendered client-side via mammoth.js.
+              PDFs are embedded in an iframe. If you see “Failed to fetch” over HTTP, check CORS / same-origin.
+            </div>
+            <div class="preview-frame-wrapper">
+              <iframe
+                id="pdfPreviewFrame"
+                class="preview-frame"
+                title="PDF preview"
+                style="display: none;"
+              ></iframe>
+              <div id="docxPreview" class="markdown-body docx-preview" style="display: none;">
+                <p class="placeholder">No document selected.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Markdown renderer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- DOCX -> HTML renderer -->
+  <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+  <script>
+    let chunks = [];
+    let selectedChunkId = null;
+    const docPreviewCache = new Map(); // key -> HTML
+    const localDocs = new Map(); // doc_name -> File
+
+    const jsonlInput = document.getElementById("jsonlInput");
+    const docsInput = document.getElementById("docsInput");
+    const searchInput = document.getElementById("searchInput");
+    const docFilter = document.getElementById("docFilter");
+    const chunkListEl = document.getElementById("chunkList");
+    const chunkCountEl = document.getElementById("chunkCount");
+    const currentChunkLabelEl = document.getElementById("currentChunkLabel");
+
+    const metaIdEl = document.getElementById("metaId");
+    const metaSectionEl = document.getElementById("metaSection");
+    const metaChunkTitleEl = document.getElementById("metaChunkTitle");
+    const metaDocNameEl = document.getElementById("metaDocName");
+
+    const chunkTextEl = document.getElementById("chunkText");
+    const footnotesWrapperEl = document.getElementById("footnotesWrapper");
+    const chunkFootnotesEl = document.getElementById("chunkFootnotes");
+
+    const baseUrlInput = document.getElementById("baseUrlInput");
+    const pdfPreviewFrame = document.getElementById("pdfPreviewFrame");
+    const docxPreviewEl = document.getElementById("docxPreview");
+    const previewInfoEl = document.getElementById("previewInfo");
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function parseJsonl(text) {
+      const lines = text.split(/\r?\n/);
+      const out = [];
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        try {
+          const obj = JSON.parse(line);
+          out.push(obj);
+        } catch (err) {
+          console.warn("Skipping invalid JSONL line:", err, raw);
+        }
+      }
+      return out;
+    }
+
+    function populateDocFilter() {
+      const select = docFilter;
+      const current = select.value;
+      const docNames = Array.from(new Set(chunks.map(c => c.doc_name))).sort();
+      let html = '<option value="">All documents</option>';
+      for (const name of docNames) {
+        const esc = escapeHtml(name);
+        html += `<option value="${esc}">${esc}</option>`;
+      }
+      select.innerHTML = html;
+      if (current && docNames.includes(current)) {
+        select.value = current;
+      }
+    }
+
+    function renderChunkList() {
+      const searchTerm = searchInput.value.toLowerCase();
+      const docFilterValue = docFilter.value;
+      chunkListEl.innerHTML = "";
+
+      let visible = chunks;
+      if (docFilterValue) {
+        visible = visible.filter(c => c.doc_name === docFilterValue);
+      }
+      if (searchTerm) {
+        visible = visible.filter(c => {
+          const haystack =
+            (String(c.id || "") +
+              " " +
+              (c["section-title"] || "") +
+              " " +
+              (c.chunk_title || "") +
+              " " +
+              (c.text || "")
+            ).toLowerCase();
+          return haystack.includes(searchTerm);
+        });
+      }
+
+      chunkCountEl.textContent = visible.length
+        ? `${visible.length} chunks`
+        : "No chunks match filters";
+
+      for (const chunk of visible) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "chunk-item";
+        btn.dataset.id = String(chunk.id);
+
+        btn.innerHTML = `
+          <div class="chunk-item-title">${escapeHtml(
+            chunk.chunk_title || "(no chunk title)"
+          )}</div>
+          <div class="chunk-item-meta">
+            <span>#${escapeHtml(String(chunk.id || ""))}</span>
+            <span>·</span>
+            <span>${escapeHtml(chunk["section-title"] || "")}</span>
+            <span>·</span>
+            <span>${escapeHtml(chunk.doc_name || "")}</span>
+          </div>
+        `;
+
+        btn.addEventListener("click", () => selectChunk(String(chunk.id)));
+        chunkListEl.appendChild(btn);
+      }
+
+      highlightActiveChunk();
+    }
+
+    function highlightActiveChunk() {
+      const items = chunkListEl.querySelectorAll(".chunk-item");
+      items.forEach(item => {
+        if (item.dataset.id === String(selectedChunkId)) {
+          item.classList.add("active");
+        } else {
+          item.classList.remove("active");
+        }
+      });
+    }
+
+    function selectChunk(id) {
+      selectedChunkId = id;
+      const chunk = chunks.find(c => String(c.id) === String(id));
+      if (!chunk) return;
+
+      currentChunkLabelEl.textContent = `Chunk #${chunk.id}`;
+      metaIdEl.textContent = chunk.id || "–";
+      metaSectionEl.textContent = chunk["section-title"] || "–";
+      metaChunkTitleEl.textContent = chunk.chunk_title || "–";
+      metaDocNameEl.textContent = chunk.doc_name || "–";
+
+      const mdText = chunk.text || "";
+      const mdFootnotes = chunk.footnotes || "";
+
+      let bodyHtml;
+      let footHtml;
+
+      if (typeof marked !== "undefined") {
+        bodyHtml = marked.parse(mdText);
+        footHtml = mdFootnotes ? marked.parse(mdFootnotes) : "";
+      } else {
+        bodyHtml = escapeHtml(mdText).replace(/\n/g, "<br>");
+        footHtml = escapeHtml(mdFootnotes).replace(/\n/g, "<br>");
+      }
+
+      if (mdText.trim()) {
+        chunkTextEl.innerHTML = bodyHtml;
+      } else {
+        chunkTextEl.innerHTML =
+          '<p class="placeholder">No text for this chunk.</p>';
+      }
+
+      if (mdFootnotes.trim()) {
+        chunkFootnotesEl.innerHTML = footHtml;
+        footnotesWrapperEl.style.display = "";
+      } else {
+        chunkFootnotesEl.innerHTML = "";
+        footnotesWrapperEl.style.display = "none";
+      }
+
+      updatePreview(chunk);
+      highlightActiveChunk();
+    }
+
+    function showPdfPreview(url) {
+      pdfPreviewFrame.style.display = "block";
+      pdfPreviewFrame.src = url;
+      docxPreviewEl.style.display = "none";
+      docxPreviewEl.innerHTML = "";
+    }
+
+    function showDocxPreviewPlaceholder(message) {
+      pdfPreviewFrame.src = "";
+      pdfPreviewFrame.style.display = "none";
+      docxPreviewEl.style.display = "block";
+      docxPreviewEl.innerHTML =
+        '<p class="placeholder">' + escapeHtml(message) + "</p>";
+    }
+
+    function renderDocxFromFile(file) {
+      if (typeof mammoth === "undefined") {
+        showDocxPreviewPlaceholder("mammoth.js is not loaded, cannot render DOCX.");
+        return;
+      }
+
+      const cacheKey = "local:" + file.name;
+      docxPreviewEl.style.display = "block";
+      pdfPreviewFrame.src = "";
+      pdfPreviewFrame.style.display = "none";
+
+      if (docPreviewCache.has(cacheKey)) {
+        docxPreviewEl.innerHTML = docPreviewCache.get(cacheKey);
+        return;
+      }
+
+      showDocxPreviewPlaceholder("Loading local document preview...");
+
+      file.arrayBuffer()
+        .then(arrayBuffer => mammoth.convertToHtml({ arrayBuffer }))
+        .then(result => {
+          const html = result.value || "<p class='placeholder'>Empty document.</p>";
+          docPreviewCache.set(cacheKey, html);
+          docxPreviewEl.innerHTML = html;
+        })
+        .catch(err => {
+          showDocxPreviewPlaceholder(
+            "Could not load local document preview: " +
+              (err && err.message ? err.message : String(err))
+          );
+        });
+    }
+
+    function renderDocxFromUrl(docUrl) {
+      if (typeof mammoth === "undefined") {
+        showDocxPreviewPlaceholder("mammoth.js is not loaded, cannot render DOCX.");
+        return;
+      }
+
+      const cacheKey = "url:" + docUrl;
+      docxPreviewEl.style.display = "block";
+      pdfPreviewFrame.src = "";
+      pdfPreviewFrame.style.display = "none";
+
+      if (docPreviewCache.has(cacheKey)) {
+        docxPreviewEl.innerHTML = docPreviewCache.get(cacheKey);
+        return;
+      }
+
+      showDocxPreviewPlaceholder("Loading document preview over HTTP...");
+
+      fetch(docUrl)
+        .then(resp => {
+          if (!resp.ok) {
+            throw new Error("HTTP " + resp.status + " while fetching doc");
+          }
+          return resp.arrayBuffer();
+        })
+        .then(arrayBuffer => mammoth.convertToHtml({ arrayBuffer }))
+        .then(result => {
+          const html = result.value || "<p class='placeholder'>Empty document.</p>";
+          docPreviewCache.set(cacheKey, html);
+          docxPreviewEl.innerHTML = html;
+        })
+        .catch(err => {
+          showDocxPreviewPlaceholder(
+            "Could not load document preview over HTTP: " +
+              (err && err.message ? err.message : String(err)) +
+              ". If this says 'Failed to fetch', make sure you're not opening viewer.html via file:// and the docs are served on the same origin."
+          );
+        });
+    }
+
+    function buildDocUrl(baseUrlRaw, docName) {
+      if (!baseUrlRaw) return null;
+      const trimmed = baseUrlRaw.trim();
+      if (!trimmed) return null;
+
+      // If starts with http(s), treat as absolute; otherwise, as relative to current origin
+      if (/^https?:\/\//i.test(trimmed)) {
+        const base = trimmed.replace(/\/+$/, "");
+        return base + "/" + encodeURIComponent(docName);
+      } else {
+        const base = trimmed.replace(/\/+$/, "");
+        const path = base + "/" + encodeURIComponent(docName);
+        const url = new URL(path, window.location.href);
+        return url.href;
+      }
+    }
+
+    function updatePreview(chunk) {
+      const docName = chunk.doc_name;
+      if (!docName) {
+        showDocxPreviewPlaceholder("No doc_name available for this chunk.");
+        previewInfoEl.textContent =
+          "No document associated with this chunk.";
+        return;
+      }
+
+      const localFile = localDocs.get(docName);
+
+      if (localFile) {
+        previewInfoEl.textContent = "Local file: " + docName;
+        renderDocxFromFile(localFile);
+        return;
+      }
+
+      const baseUrlRaw = baseUrlInput.value.trim();
+      const docUrl = buildDocUrl(baseUrlRaw, docName);
+
+      if (!docUrl) {
+        showDocxPreviewPlaceholder(
+          "No local file found. Load the docs folder or set a valid base URL."
+        );
+        previewInfoEl.textContent =
+          "No local file. Set Base URL or load docs folder.";
+        return;
+      }
+
+      const lower = docName.toLowerCase();
+      previewInfoEl.textContent = docUrl;
+
+      if (lower.endsWith(".pdf")) {
+        showPdfPreview(docUrl);
+      } else if (lower.endsWith(".doc") || lower.endsWith(".docx")) {
+        renderDocxFromUrl(docUrl);
+      } else {
+        showDocxPreviewPlaceholder(
+          "Unsupported file type for preview. You can still open it directly in a new tab."
+        );
+      }
+    }
+
+    jsonlInput.addEventListener("change", event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        chunks = parseJsonl(reader.result);
+        selectedChunkId = null;
+        currentChunkLabelEl.textContent = "No chunk selected";
+        metaIdEl.textContent = "–";
+        metaSectionEl.textContent = "–";
+        metaChunkTitleEl.textContent = "–";
+        metaDocNameEl.textContent = "–";
+        chunkTextEl.innerHTML =
+          '<p class="placeholder">Select a chunk from the list on the left.</p>';
+        footnotesWrapperEl.style.display = "none";
+        pdfPreviewFrame.src = "";
+        pdfPreviewFrame.style.display = "none";
+        docxPreviewEl.style.display = "block";
+        docxPreviewEl.innerHTML =
+          '<p class="placeholder">Load docs folder or set a Base URL, then select a chunk.</p>';
+        previewInfoEl.textContent =
+          "Load docs folder or set Base URL, then select a chunk.";
+        populateDocFilter();
+        renderChunkList();
+        if (chunks.length > 0) {
+          selectChunk(String(chunks[0].id));
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    docsInput.addEventListener("change", event => {
+      localDocs.clear();
+      const files = event.target.files;
+      if (!files || !files.length) return;
+
+      for (const file of files) {
+        // Map by filename only (JSONL doc_name is e.g. "174.docx")
+        const name = file.name;
+        localDocs.set(name, file);
+      }
+
+      // If a chunk is already selected, refresh its preview using local file
+      if (selectedChunkId) {
+        const chunk = chunks.find(c => String(c.id) === String(selectedChunkId));
+        if (chunk) updatePreview(chunk);
+      }
+    });
+
+    searchInput.addEventListener("input", () => {
+      renderChunkList();
+    });
+
+    docFilter.addEventListener("change", () => {
+      renderChunkList();
+    });
+
+    baseUrlInput.addEventListener("change", () => {
+      if (!selectedChunkId) return;
+      const chunk = chunks.find(c => String(c.id) === String(selectedChunkId));
+      if (chunk) updatePreview(chunk);
+    });
+  </script>
+</body>
+</html>
