@@ -14,14 +14,25 @@ Chunk downloaded Word documents into markdown sections based on subheadings
     id, chunk_title, text, footnotes, order, chapter, filename,
     page_number, url
 
-Chunk ID format:
-    "<doc_number>-c<chunk_index>"
-Where <doc_number> is taken from the start of the filename (e.g. "1.1.3")
-and <chunk_index> is 1-based.
+ID format (unique across all docs):
+    "<unique_doc_number>-c<chunk_index>"
 
-chunk_title format:
-    "<doc_number> <heading of that chunk>"
-If doc_number is missing, it falls back to filename-based titles.
+Where:
+    - base_doc_number is taken from the start of the filename, e.g. "7.3.3A.1"
+    - unique_doc_number is:
+        1st time we see that base_doc_number  -> "7.3.3A.1"
+        2nd time                                -> "B7.3.3A.1"
+        3rd time                                -> "C7.3.3A.1"
+        etc.
+
+chunk_title rules:
+    - If the heading starts with a number (e.g. "7.3.3A.1 Charge..."),
+      use the heading as-is.
+    - Else, if base_doc_number exists, use "<base_doc_number> <heading>".
+    - Else fall back to filename-based titles.
+    - Asterisks '*' are stripped from chunk_title so markdown markers don't leak into titles.
+    - If the first token is duplicated at the start (e.g. "7.4.6.2 7.4.6.2 Checklist"),
+      it is collapsed to a single instance ("7.4.6.2 Checklist").
 """
 
 import argparse
@@ -36,6 +47,10 @@ from docx.oxml import parse_xml
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
 
+# --------------------------
+# Metadata helpers
+# --------------------------
+
 def load_metadata(meta_path: str) -> List[dict]:
     records: List[dict] = []
     with open(meta_path, "r", encoding="utf-8") as f:
@@ -49,18 +64,60 @@ def load_metadata(meta_path: str) -> List[dict]:
 
 def extract_doc_number_from_filename(filename: str) -> Optional[str]:
     """
-    Extract the leading "x.x.x..." pattern from a filename like:
-        "1.1 Something.docx" -> "1.1"
-        "3.2.4 Some Title.docx" -> "3.2.4"
-    Returns None if no such pattern exists.
+    Extract the leading legal-style id from a filename, including letters
+    and multiple dot-separated segments.
+
+    Examples:
+        "7.3.3A.1 Charge.docx"      -> "7.3.3A.1"
+        "7.2.1B Some Title.docx"    -> "7.2.1B"
+        "6.2.2.3.1 Extra.docx"      -> "6.2.2.3.1"
+        "1 Introductory Remarks"    -> "1"
+
+    Pattern: first token starting with a digit, then segments separated by '.',
+    where each segment is alphanumeric (digits and/or letters).
     """
     base = os.path.basename(filename)
     name, _ = os.path.splitext(base)
-    m = re.match(r"\s*(\d+(?:\.\d+)*)", name)
+    m = re.match(r"\s*([0-9]+(?:\.[0-9A-Za-z]+)*)", name)
     if not m:
         return None
     return m.group(1)
 
+
+def heading_starts_with_number(heading: Optional[str]) -> bool:
+    """
+    True if the heading text starts with a digit (after any leading whitespace
+    and common invisible characters).
+    """
+    if not heading:
+        return False
+    # Strip common invisible/whitespace chars
+    s = heading.lstrip("\u200e\u200f\ufeff \t\r\n")
+    return bool(s and s[0].isdigit())
+
+
+def sanitize_chunk_title(title: Optional[str]) -> Optional[str]:
+    """
+    Sanitize the chunk title:
+      - Remove asterisks (markdown markers)
+      - Collapse repeated first token:
+        e.g. "7.4.6.2 7.4.6.2 Checklist" -> "7.4.6.2 Checklist"
+    """
+    if title is None:
+        return None
+    title = title.replace("*", "").strip()
+
+    # Collapse repeated first token
+    m = re.match(r"^(\S+)\s+\1\b(.*)$", title)
+    if m:
+        title = (m.group(1) + m.group(2)).strip()
+
+    return title
+
+
+# --------------------------
+# Word document helpers
+# --------------------------
 
 def get_paragraph_font_size(paragraph) -> Optional[float]:
     """
@@ -191,25 +248,28 @@ def build_numbering_cache(doc) -> Dict[Tuple[int, int], dict]:
     return cache
 
 
-def get_list_info(paragraph, numbering_cache) -> Tuple[Optional[str], Optional[int], Optional[str], Optional[str]]:
+def get_list_info(
+    paragraph, numbering_cache
+) -> Tuple[Optional[str], Optional[int], Optional[str], Optional[str], Optional[int]]:
     """
     Determine whether a paragraph is part of a list and, if so,
-    return (list_type, list_level, num_fmt, lvl_text).
+    return (list_type, list_level, num_fmt, lvl_text, num_id).
 
     list_type: 'ul' for unordered, 'ol' for ordered, None otherwise
     list_level: 0 for top-level list, 1+ for nested lists, None if not a list
     num_fmt: Word numbering format (decimal, lowerLetter, bullet, etc.) or None
     lvl_text: raw lvlText pattern like "%1." or "%1)" or None
+    num_id: the Word numId (or None if unknown)
     """
     style_name = (getattr(paragraph.style, "name", "") or "").lower()
     list_type: Optional[str] = None
     num_fmt: Optional[str] = None
     lvl_text: Optional[str] = None
     level: Optional[int] = None
+    num_id: Optional[int] = None
+    ilvl: Optional[int] = None
 
     pPr = paragraph._p.pPr
-    num_id = None
-    ilvl = None
 
     if pPr is not None and pPr.numPr is not None:
         numId_el = pPr.numPr.numId
@@ -244,10 +304,10 @@ def get_list_info(paragraph, numbering_cache) -> Tuple[Optional[str], Optional[i
             list_type = "ol"
 
     if list_type is None:
-        return None, None, None, None
+        return None, None, None, None, None
 
     level = ilvl if ilvl is not None else 0
-    return list_type, level, num_fmt, lvl_text
+    return list_type, level, num_fmt, lvl_text, num_id
 
 
 def run_to_markdown(r_el) -> str:
@@ -306,7 +366,9 @@ def hyperlink_to_markdown(h_el, doc) -> str:
     return text
 
 
-def collect_inline_markdown(p_el, doc, used_footnote_ids: Optional[Set[int]] = None) -> Tuple[str, Set[int]]:
+def collect_inline_markdown(
+    p_el, doc, used_footnote_ids: Optional[Set[int]] = None
+) -> Tuple[str, Set[int]]:
     """
     Convert the inline content of a w:p element into markdown, capturing
     any footnote references encountered.
@@ -366,7 +428,9 @@ def extract_footnotes_markdown(doc) -> Dict[int, str]:
         # If anything goes wrong, just skip footnotes rather than crashing
         return notes
 
-    ns = fn_el.nsmap or {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    ns = fn_el.nsmap or {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    }
 
     for fn in fn_el.findall("w:footnote", namespaces=ns):
         id_attr = fn.get(qn("w:id"))
@@ -403,6 +467,8 @@ def build_blocks(doc) -> List[dict]:
         list_level (int or None)
         num_fmt (Word numbering format or None)
         lvl_text (raw lvlText pattern)
+        num_id (numId or None)
+        list_key (hashable key for this logical list)
         used_footnote_ids (set[int])
     Empty paragraphs are skipped.
     """
@@ -419,8 +485,22 @@ def build_blocks(doc) -> List[dict]:
             continue
 
         is_sub = is_subheading_paragraph(p)
-        heading_level = get_heading_level(p, is_first=(idx == 0), is_subheading=is_sub)
-        list_type, list_level, num_fmt, lvl_text = get_list_info(p, numbering_cache)
+        heading_level = get_heading_level(
+            p, is_first=(idx == 0), is_subheading=is_sub
+        )
+        list_type, list_level, num_fmt, lvl_text, num_id = get_list_info(
+            p, numbering_cache
+        )
+
+        # Construct a list key so we can keep numbering across sublists, etc.
+        if list_type is not None:
+            if num_id is not None:
+                list_key = (num_id, list_level, list_type)
+            else:
+                style_name = (getattr(p.style, "name", "") or "").lower()
+                list_key = (list_type, list_level, style_name)
+        else:
+            list_key = None
 
         blocks.append(
             {
@@ -431,6 +511,8 @@ def build_blocks(doc) -> List[dict]:
                 "list_level": list_level,
                 "num_fmt": num_fmt,
                 "lvl_text": lvl_text,
+                "num_id": num_id,
+                "list_key": list_key,
                 "used_footnote_ids": used_ids,
             }
         )
@@ -517,7 +599,8 @@ def build_chunk_markdown(
 
     List handling:
       - 4 spaces per indent level for nested lists
-      - contiguous list blocks stay together
+      - Ordered list numbering is tracked per list_key (numId+level+type),
+        so 1. 2. 3. ... sublist ... 4. 5. 6. stays correct.
     """
     lines: List[str] = []
     used_footnotes: Set[int] = set()
@@ -525,7 +608,10 @@ def build_chunk_markdown(
 
     prev_is_list = False
     prev_list_type: Optional[str] = None
-    ol_counters: Dict[int, int] = {}
+    prev_list_level: Optional[int] = None
+
+    # Track ordered-list counters by logical list_key
+    ol_counters_by_key: Dict[Tuple, int] = {}
 
     for idx in range(start, end + 1):
         block = blocks[idx]
@@ -537,6 +623,7 @@ def build_chunk_markdown(
         heading_level = block["heading_level"]
         list_type = block["list_type"]
         list_level = block["list_level"] if block["list_level"] is not None else 0
+        list_key = block["list_key"]
 
         # Non-list paragraph
         if list_type is None:
@@ -544,7 +631,7 @@ def build_chunk_markdown(
                 lines.append("")
             prev_is_list = False
             prev_list_type = None
-            ol_counters = {}
+            prev_list_level = None
 
             if heading_level is not None:
                 # Heading line
@@ -562,23 +649,30 @@ def build_chunk_markdown(
         # List paragraph
         indent = "    " * list_level  # 4 spaces per level
 
-        # If we are starting a new list block, reset counters and add a blank line
-        if not prev_is_list or list_type != prev_list_type:
+        # Decide if this is a "new list block" for spacing purposes
+        if not prev_is_list:
             if lines and lines[-1] != "":
                 lines.append("")
-            ol_counters = {}
+        elif list_type != prev_list_type and list_level == 0:
+            # Changing list type at top level → visually separate
+            if lines and lines[-1] != "":
+                lines.append("")
 
         if list_type == "ol":
-            current = ol_counters.get(list_level, 0) + 1
-            ol_counters[list_level] = current
+            # We want numbering continuity for each logical list (list_key)
+            key = list_key if list_key is not None else ("ol", list_level)
+            current = ol_counters_by_key.get(key, 0) + 1
+            ol_counters_by_key[key] = current
             prefix = f"{indent}{current}. "
         else:
+            # Bullet
             prefix = f"{indent}- "
 
         lines.append(prefix + text)
 
         prev_is_list = True
         prev_list_type = list_type
+        prev_list_level = list_level
 
     full_text = "\n\n".join(lines).strip()
     return full_text, used_footnotes, heading_title
@@ -600,12 +694,20 @@ def build_footnotes_markdown(
     return "\n".join(lines)
 
 
+# --------------------------
+# Document processing
+# --------------------------
+
 def process_document(
-    doc_path: str, meta: dict
+    doc_path: str,
+    meta: dict,
+    base_doc_number: Optional[str],
+    id_doc_number: Optional[str],
 ) -> List[dict]:
     """
     Process a single .docx/.doc document into chunks with metadata.
-    Returns a list of chunk dicts.
+    base_doc_number: the "pure" x.x.x.x... derived from filename (for titles)
+    id_doc_number:   the unique version (with B/C/etc prefix if needed) used in IDs
     """
     doc = Document(doc_path)
     blocks = build_blocks(doc)
@@ -616,7 +718,6 @@ def process_document(
     boundaries = get_chunk_boundaries(blocks)
 
     chunks: List[dict] = []
-    doc_number = extract_doc_number_from_filename(meta["filename"])
     chunk_idx = 0
 
     base_filename = os.path.basename(meta["filename"])
@@ -634,21 +735,27 @@ def process_document(
 
         footnotes_md = build_footnotes_markdown(footnotes_map, used_fn_ids)
 
-        # Chunk ID
-        if doc_number:
-            chunk_id = f"{doc_number}-c{chunk_idx}"
+        # --- ID construction (uses unique id_doc_number) ---
+        if id_doc_number:
+            chunk_id = f"{id_doc_number}-c{chunk_idx}"
         else:
             chunk_id = f"{base_name_no_ext}-c{chunk_idx}"
 
-        # Chunk title: doc number + heading (preferred), with fallbacks
-        if doc_number and heading_title:
-            chunk_title = f"{doc_number} {heading_title}"
-        elif doc_number:
-            chunk_title = doc_number
-        elif heading_title:
-            chunk_title = f"{base_name_no_ext} - {heading_title}"
+        # --- Title construction (uses base_doc_number for human readability) ---
+        if heading_title:
+            stripped_heading = heading_title.strip()
+            if heading_starts_with_number(stripped_heading):
+                # Heading already has numbering; prefer it as-is
+                chunk_title = stripped_heading
+            elif base_doc_number:
+                chunk_title = f"{base_doc_number} {stripped_heading}"
+            else:
+                chunk_title = f"{base_name_no_ext} - {stripped_heading}"
         else:
-            chunk_title = base_name_no_ext
+            chunk_title = base_doc_number if base_doc_number else base_name_no_ext
+
+        # Sanitize title (remove *, collapse repeated first token)
+        chunk_title = sanitize_chunk_title(chunk_title)
 
         result = {
             "id": chunk_id,
@@ -666,6 +773,10 @@ def process_document(
 
     return chunks
 
+
+# --------------------------
+# Main
+# --------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -699,6 +810,9 @@ def main():
 
     total_chunks = 0
 
+    # Track how many times we've seen each base_doc_number
+    doc_number_counts: Dict[str, int] = {}
+
     with open(out_path, "w", encoding="utf-8") as out_f:
         for meta in metadata_records:
             filename = meta.get("filename")
@@ -715,8 +829,27 @@ def main():
                 print(f"WARNING: File not found, skipping: {doc_path}")
                 continue
 
-            print(f"Processing: {doc_path}")
-            chunks = process_document(doc_path, meta)
+            # --- Compute base_doc_number and unique id_doc_number ---
+            base_doc_number = extract_doc_number_from_filename(filename)
+            if base_doc_number:
+                count = doc_number_counts.get(base_doc_number, 0)
+                if count == 0:
+                    id_doc_number = base_doc_number
+                else:
+                    # For 2nd, 3rd, ... occurrences add B, C, ...
+                    if count < 26:
+                        letter = chr(ord("A") + count)  # 1 -> 'B', 2 -> 'C', ...
+                        id_doc_number = f"{letter}{base_doc_number}"
+                    else:
+                        # Fallback if somehow > 26 repeats
+                        id_doc_number = f"{count+1}-{base_doc_number}"
+                doc_number_counts[base_doc_number] = count + 1
+            else:
+                base_doc_number = None
+                id_doc_number = None
+
+            print(f"Processing: {doc_path} (base_doc_number={base_doc_number}, id_doc_number={id_doc_number})")
+            chunks = process_document(doc_path, meta, base_doc_number, id_doc_number)
             for chunk in chunks:
                 out_f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
             total_chunks += len(chunks)
