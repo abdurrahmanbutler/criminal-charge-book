@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chunks vs PDF Viewer (Day Theme)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --bg-panel: #ffffff;
+      --bg-sidebar: #fafafa;
+      --border: #d0d0d0;
+      --accent: #005fcb;
+      --accent-soft: #e1efff;
+      --text: #222222;
+      --text-muted: #666666;
+      --shadow-soft: 0 2px 6px rgba(0, 0, 0, 0.06);
+      --radius-lg: 10px;
+      --radius-sm: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 10px 16px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-soft);
+      z-index: 10;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    header span {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    /* Sidebar with file inputs + chunk list */
+    .sidebar {
+      width: 300px;
+      max-width: 340px;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      gap: 10px;
+    }
+
+    .file-inputs {
+      background: var(--bg-panel);
+      border-radius: var(--radius-lg);
+      padding: 10px;
+      box-shadow: var(--shadow-soft);
+      border: 1px solid #e6e6e6;
+    }
+
+    .file-inputs h2 {
+      font-size: 13px;
+      margin: 0 0 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    .file-inputs label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .file-inputs input[type="file"] {
+      display: block;
+      width: 100%;
+      font-size: 12px;
+    }
+
+    .status {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    .chunk-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      background: var(--bg-panel);
+      border-radius: var(--radius-lg);
+      padding: 6px;
+      box-shadow: var(--shadow-soft);
+      border: 1px solid #e6e6e6;
+    }
+
+    .chunk-list-header {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      padding: 4px 8px 6px;
+      border-bottom: 1px solid #f0f0f0;
+      position: sticky;
+      top: 0;
+      background: var(--bg-panel);
+      z-index: 1;
+    }
+
+    .chunk-item {
+      padding: 6px 8px;
+      margin: 4px 0;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      border: 1px solid transparent;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .chunk-item:hover {
+      background: #f3f5ff;
+      border-color: #d0defc;
+    }
+
+    .chunk-item.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+    }
+
+    .chunk-item-title {
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .chunk-item-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* Main content: markdown vs PDF */
+    .content {
+      flex: 1;
+      display: flex;
+      min-width: 0;
+    }
+
+    .pane {
+      flex: 1;
+      padding: 10px 10px 10px 10px;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .pane + .pane {
+      border-left: 1px solid var(--border);
+    }
+
+    .card {
+      background: var(--bg-panel);
+      border-radius: var(--radius-lg);
+      padding: 10px 14px;
+      box-shadow: var(--shadow-soft);
+      border: 1px solid #e6e6e6;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .meta-card {
+      font-size: 12px;
+      gap: 6px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 4px 10px;
+      font-size: 12px;
+    }
+
+    .meta-label {
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .meta-value {
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .markdown-card {
+      flex: 1;
+      overflow: auto;
+    }
+
+    .markdown-content {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .markdown-content h1,
+    .markdown-content h2,
+    .markdown-content h3,
+    .markdown-content h4 {
+      margin-top: 1.4em;
+      margin-bottom: 0.4em;
+    }
+
+    .markdown-content p {
+      margin: 0.4em 0;
+    }
+
+    .markdown-content ul,
+    .markdown-content ol {
+      padding-left: 1.4em;
+      margin: 0.4em 0;
+    }
+
+    .markdown-content code {
+      background: #f1f1f4;
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-size: 90%;
+    }
+
+    .markdown-content pre {
+      background: #f1f1f4;
+      padding: 8px;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+
+    .markdown-content a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .markdown-content a:hover {
+      text-decoration: underline;
+    }
+
+    .pdf-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .pdf-controls-left,
+    .pdf-controls-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    button:hover {
+      background: #f0f4ff;
+      border-color: var(--accent);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .tag {
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #f0f3ff;
+      border: 1px solid #d0defc;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .pdf-canvas-container {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      background: #f0f0f3;
+      border-radius: var(--radius-lg);
+      padding: 8px;
+    }
+
+    #pdfCanvas {
+      background: #ffffff;
+      box-shadow: var(--shadow-soft);
+      border-radius: 4px;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .empty-state {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      margin: auto;
+      max-width: 320px;
+    }
+
+    .empty-state strong {
+      color: var(--text);
+    }
+
+    input[type="range"] {
+      width: 120px;
+    }
+
+    @media (max-width: 960px) {
+      .sidebar {
+        width: 260px;
+      }
+    }
+
+    @media (max-width: 800px) {
+      main {
+        flex-direction: column;
+      }
+      .sidebar {
+        width: 100%;
+        max-width: none;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .content {
+        flex-direction: column;
+      }
+      .pane + .pane {
+        border-left: none;
+        border-top: 1px solid var(--border);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Chunk vs PDF Comparison</h1>
+      <span>Day theme · JSONL chunks on the left, PDF page on the right</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Sidebar: file inputs + chunk list -->
+    <aside class="sidebar">
+      <div class="file-inputs">
+        <h2>Files</h2>
+        <label>
+          Chunks JSONL
+          <input type="file" id="jsonlInput" accept=".jsonl,.txt" />
+        </label>
+        <label>
+          PDF
+          <input type="file" id="pdfInput" accept="application/pdf,.pdf" />
+        </label>
+        <div class="status" id="statusText">
+          Load your JSONL and PDF to begin.
+        </div>
+      </div>
+
+      <div class="chunk-list" id="chunkList">
+        <div class="chunk-list-header">
+          Chunks
+        </div>
+        <div class="empty-state" id="chunkListEmpty">
+          <strong>No chunks loaded.</strong><br />
+          Select a JSONL file above. Each row should contain:
+          <code>id, chunk_title, text, footnotes, order, chapter, filename, page_number, url</code>.
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content: markdown vs PDF -->
+    <div class="content">
+      <!-- Left pane: metadata + markdown -->
+      <section class="pane">
+        <div class="card meta-card" id="metaCard">
+          <div class="empty-state">
+            Select a chunk from the list to see its metadata and markdown.
+          </div>
+        </div>
+
+        <div class="card markdown-card">
+          <div id="markdownContainer" class="markdown-content empty-state">
+            Chunk markdown will appear here.
+          </div>
+        </div>
+      </section>
+
+      <!-- Right pane: PDF viewer -->
+      <section class="pane">
+        <div class="card" style="min-height: 0; display: flex; flex-direction: column;">
+          <div class="pdf-controls">
+            <div class="pdf-controls-left">
+              <button id="prevPageBtn" disabled>&laquo; Prev</button>
+              <button id="nextPageBtn" disabled>Next &raquo;</button>
+              <span id="pageInfo" class="tag">Page – / –</span>
+            </div>
+            <div class="pdf-controls-right">
+              <span>Zoom</span>
+              <input
+                type="range"
+                id="zoomRange"
+                min="0.6"
+                max="2.0"
+                step="0.1"
+                value="1.2"
+              />
+            </div>
+          </div>
+
+          <div class="pdf-canvas-container">
+            <canvas id="pdfCanvas"></canvas>
+            <div class="empty-state" id="pdfEmpty">
+              Load the PDF file to see pages here. When you select a chunk with a
+              <code>page_number</code>, this viewer will jump to that page automatically.
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Markdown renderer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script>
+    // PDF.js setup
+    // eslint-disable-next-line no-undef
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+
+    let chunks = [];
+    let currentChunkIndex = null;
+
+    let pdfDoc = null;
+    let currentPageNumber = 1;
+    let pdfScale = 1.2;
+    let isRendering = false;
+
+    const jsonlInput = document.getElementById("jsonlInput");
+    const pdfInput = document.getElementById("pdfInput");
+    const statusText = document.getElementById("statusText");
+    const chunkListEl = document.getElementById("chunkList");
+    const chunkListEmptyEl = document.getElementById("chunkListEmpty");
+    const metaCard = document.getElementById("metaCard");
+    const markdownContainer = document.getElementById("markdownContainer");
+    const pdfCanvas = document.getElementById("pdfCanvas");
+    const pdfEmpty = document.getElementById("pdfEmpty");
+    const prevPageBtn = document.getElementById("prevPageBtn");
+    const nextPageBtn = document.getElementById("nextPageBtn");
+    const pageInfo = document.getElementById("pageInfo");
+    const zoomRange = document.getElementById("zoomRange");
+
+    const ctx = pdfCanvas.getContext("2d");
+
+    function setStatus(msg) {
+      statusText.textContent = msg;
+    }
+
+    // --- JSONL loading ---
+    jsonlInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target.result;
+        const lines = text.split(/\r?\n/);
+        const out = [];
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const obj = JSON.parse(trimmed);
+            out.push(obj);
+          } catch (err) {
+            console.warn("Skipping invalid JSONL line:", line);
+          }
+        }
+        chunks = out;
+        renderChunkList();
+        setStatus(`Loaded ${chunks.length} chunk row(s) from JSONL.`);
+      };
+      reader.readAsText(file);
+    });
+
+    function renderChunkList() {
+      const list = chunkListEl;
+      // Remove everything except the header
+      const header = list.querySelector(".chunk-list-header");
+      list.innerHTML = "";
+      list.appendChild(header);
+
+      if (!chunks.length) {
+        chunkListEmptyEl.style.display = "block";
+        list.appendChild(chunkListEmptyEl);
+        return;
+      }
+
+      chunkListEmptyEl.style.display = "none";
+
+      chunks.forEach((chunk, idx) => {
+        const item = document.createElement("div");
+        item.className = "chunk-item";
+        item.dataset.index = idx;
+
+        const title = document.createElement("div");
+        title.className = "chunk-item-title";
+        title.textContent = chunk.chunk_title || chunk.id || `Chunk ${idx + 1}`;
+        item.appendChild(title);
+
+        const meta = document.createElement("div");
+        meta.className = "chunk-item-meta";
+        const idPart = document.createElement("span");
+        idPart.textContent = chunk.id || "-";
+        meta.appendChild(idPart);
+
+        if (chunk.page_number != null) {
+          const pagePart = document.createElement("span");
+          pagePart.textContent = `Page ${chunk.page_number}`;
+          meta.appendChild(pagePart);
+        }
+
+        if (chunk.chapter) {
+          const chapterPart = document.createElement("span");
+          chapterPart.textContent = chunk.chapter;
+          meta.appendChild(chapterPart);
+        }
+
+        item.appendChild(meta);
+
+        item.addEventListener("click", () => selectChunk(idx));
+        list.appendChild(item);
+      });
+    }
+
+    function selectChunk(index) {
+      currentChunkIndex = index;
+      const chunk = chunks[index];
+
+      // Highlight active
+      document
+        .querySelectorAll(".chunk-item")
+        .forEach((el) => el.classList.remove("active"));
+      const active = document.querySelector(
+        `.chunk-item[data-index="${index}"]`
+      );
+      if (active) active.classList.add("active");
+
+      // Metadata panel
+      metaCard.innerHTML = "";
+      const grid = document.createElement("div");
+      grid.className = "meta-grid";
+
+      function addMeta(label, value) {
+        const wrap = document.createElement("div");
+        const lab = document.createElement("div");
+        lab.className = "meta-label";
+        lab.textContent = label;
+        const val = document.createElement("div");
+        val.className = "meta-value";
+        val.textContent =
+          value === undefined || value === null || value === ""
+            ? "–"
+            : String(value);
+        wrap.appendChild(lab);
+        wrap.appendChild(val);
+        grid.appendChild(wrap);
+      }
+
+      addMeta("ID", chunk.id);
+      addMeta("Order", chunk.order);
+      addMeta("Chapter", chunk.chapter);
+      addMeta("Filename", chunk.filename);
+      addMeta("Page", chunk.page_number);
+      addMeta("URL", chunk.url);
+
+      metaCard.appendChild(grid);
+
+      // Markdown content
+      const mainText = chunk.text || "";
+      const footnotes = chunk.footnotes || "";
+      let combined = mainText;
+      if (footnotes && !mainText.includes(footnotes)) {
+        combined += "\n\n---\n\n" + footnotes;
+      }
+      // eslint-disable-next-line no-undef
+      markdownContainer.innerHTML = marked.parse(combined);
+      markdownContainer.classList.remove("empty-state");
+
+      // Jump to page in PDF (if loaded)
+      if (pdfDoc && chunk.page_number != null) {
+        const pageNum = parseInt(chunk.page_number, 10);
+        if (!Number.isNaN(pageNum)) {
+          currentPageNumber = Math.min(
+            Math.max(pageNum, 1),
+            pdfDoc.numPages || pageNum
+          );
+          renderPage(currentPageNumber);
+        }
+      }
+    }
+
+    // --- PDF loading & rendering ---
+    pdfInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const typedarray = new Uint8Array(ev.target.result);
+        // eslint-disable-next-line no-undef
+        const loadingTask = pdfjsLib.getDocument({ data: typedarray });
+        loadingTask.promise
+          .then((doc) => {
+            pdfDoc = doc;
+            currentPageNumber = 1;
+            setStatus(
+              `PDF loaded (${doc.numPages} page${doc.numPages === 1 ? "" : "s"}).`
+            );
+            pdfEmpty.style.display = "none";
+            prevPageBtn.disabled = false;
+            nextPageBtn.disabled = false;
+            renderPage(currentPageNumber);
+          })
+          .catch((err) => {
+            console.error(err);
+            setStatus("Error loading PDF – see console.");
+          });
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    function renderPage(num) {
+      if (!pdfDoc || isRendering) return;
+      isRendering = true;
+      pdfDoc
+        .getPage(num)
+        .then((page) => {
+          const viewport = page.getViewport({ scale: pdfScale });
+          pdfCanvas.height = viewport.height;
+          pdfCanvas.width = viewport.width;
+
+          const renderContext = {
+            canvasContext: ctx,
+            viewport: viewport,
+          };
+          const renderTask = page.render(renderContext);
+          return renderTask.promise.then(() => {
+            isRendering = false;
+            pageInfo.textContent = `Page ${num} / ${pdfDoc.numPages}`;
+          });
+        })
+        .catch((err) => {
+          console.error(err);
+          isRendering = false;
+        });
+    }
+
+    prevPageBtn.addEventListener("click", () => {
+      if (!pdfDoc) return;
+      if (currentPageNumber <= 1) return;
+      currentPageNumber -= 1;
+      renderPage(currentPageNumber);
+    });
+
+    nextPageBtn.addEventListener("click", () => {
+      if (!pdfDoc) return;
+      if (currentPageNumber >= pdfDoc.numPages) return;
+      currentPageNumber += 1;
+      renderPage(currentPageNumber);
+    });
+
+    zoomRange.addEventListener("input", (e) => {
+      const val = parseFloat(e.target.value);
+      if (!Number.isNaN(val)) {
+        pdfScale = val;
+        if (pdfDoc) {
+          renderPage(currentPageNumber);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
